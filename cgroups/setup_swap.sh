@@ -3,6 +3,7 @@
 set -e
 
 touch swap.file
+chmod 0600 swap.file
 
 # mkswap fails when swap.file has holes.
 # that means truncate would fail here.
