@@ -1,11 +1,18 @@
 
 #include <chrono>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <thread>
+#include <fmt/core.h>
+
+//
+// apt install libfmt-dev
+// g++ file_memory.cpp -std=c++11 -o file_memory `pkg-config --cflags --libs fmt`
+//
 
 #define PAGE_SIZE 4096
 
@@ -17,13 +24,13 @@ int main(int argc, char** argv) {
   int fd = open(filename.c_str(), O_RDONLY);
 
   if (fd < 0) {
-    throw std::runtime_error{"failed to open file"};
+    throw std::runtime_error{fmt::format("failed to open file {}. reason: {}", filename, strerror(errno))};
   }
 
   struct stat st;
   int ret = fstat(fd, &st);
   if (ret == -1) {
-    throw std::runtime_error{"failed to stat file"};
+    throw std::runtime_error{fmt::format("failed to stat file. reason: {}", strerror(errno))};
   }
 
   size_t file_sz = st.st_size;
