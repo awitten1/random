@@ -12,7 +12,12 @@ int main(int argc, char** argv) {
   long allocated_bytes = 0;
   long alloc_size = bytes_per_second / 10;
   for (;;) {
-    (void)malloc(alloc_size);
+    char* buf = (char*)malloc(alloc_size);
+
+    // write into the buffer, just so that the physical pages are actually allocated.
+    for (int i = 0; i < alloc_size; ++i) {
+      buf[i] = 0;
+    }
     allocated_bytes += alloc_size;
     if (alloc_size > total_bytes) {
       break;
