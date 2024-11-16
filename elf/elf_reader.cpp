@@ -178,6 +178,47 @@ void logMachine(Elf64_Ehdr x) {
   }
 }
 
+void logEntryPointAddress(Elf64_Ehdr x) {
+  printf("Virtual Memory Address Entrypoint: 0x%lx\n", x.e_entry);
+}
+
+void logProgramHeaderFileOffset(Elf64_Ehdr x) {
+  printf("program header file offset: %lu (bytes)\n", x.e_phoff);
+}
+
+
+void logSectionHeaderFileOffset(Elf64_Ehdr x) {
+  printf("section header file offset: %lu (bytes)\n", x.e_shoff);
+}
+
+void logSizeOfHeader(Elf64_Ehdr x) {
+  printf("Size of this header: %d.  Sizeof structure: %lu\n", x.e_ehsize, sizeof(x));
+}
+
+uint64_t GetProgramHeaderOffset(Elf64_Ehdr x) {
+  return x.e_phoff;
+}
+
+uint64_t EntriesInProgramHeader(Elf64_Ehdr x) {
+  return x.e_phnum;
+}
+
+uint64_t ProgramHeaderEntrySize(Elf64_Ehdr x) {
+  return x.e_phentsize;
+}
+
+void ReadProgramHeaderTable(Elf64_Ehdr x, int fd) {
+  for (uint64_t i = 0; i < x.e_phnum; ++i) {
+    uint64_t offset = i * x.e_phentsize + x.e_phoff;
+
+    char* buf = new char[x.e_phentsize];
+    int ret = pread(fd, buf, x.e_phentsize, offset);
+    std::cout << x.e_phentsize << ", " << sizeof(Elf64_Phdr) << std::endl;
+    if (ret != x.e_phentsize) {
+      throw std::runtime_error{"failed to read program header"};
+    }
+  }
+}
 
 int main(int argc, char** argv) {
   Elf64_Ehdr x;
@@ -203,6 +244,12 @@ int main(int argc, char** argv) {
   logOsAbi(x);
   logObjectFileType(x);
   logMachine(x);
+  logEntryPointAddress(x);
+  logProgramHeaderFileOffset(x);
+  logSectionHeaderFileOffset(x);
+  logSizeOfHeader(x);
+
+  ReadProgramHeaderTable(x, fd);
 
   return 0;
 }
