@@ -211,11 +211,31 @@ void ReadProgramHeaderTable(Elf64_Ehdr x, int fd) {
   for (uint64_t i = 0; i < x.e_phnum; ++i) {
     uint64_t offset = i * x.e_phentsize + x.e_phoff;
 
-    char* buf = new char[x.e_phentsize];
-    int ret = pread(fd, buf, x.e_phentsize, offset);
+    Elf64_Phdr phdr;
+    if (sizeof(phdr) != x.e_phentsize) {
+      throw std::runtime_error{"Elf64_Phdr size does not match x.e_phentsize"};
+    }
+
+    int ret = pread(fd, &phdr, x.e_phentsize, offset);
     std::cout << x.e_phentsize << ", " << sizeof(Elf64_Phdr) << std::endl;
     if (ret != x.e_phentsize) {
       throw std::runtime_error{"failed to read program header"};
+    }
+  }
+}
+
+void ReadSectionHeaderTable(Elf64_Ehdr x, int fd) {
+  for (uint64_t i = 0; i < x.e_shnum; ++i) {
+    Elf64_Shdr shdr;
+    uint64_t offset = i * x.e_shentsize + x.e_shoff;
+    if (sizeof(shdr) != x.e_shentsize) {
+      throw std::runtime_error{"Elf64_Shdr size does not match x.e_shentsize"};
+    }
+
+    int ret = pread(fd, &shdr, x.e_shentsize, offset);
+    std::cout << x.e_shentsize << ", " << sizeof(Elf64_Shdr) << std::endl;
+    if (ret != x.e_shentsize) {
+      throw std::runtime_error{"failed to read section header"};
     }
   }
 }
@@ -250,6 +270,7 @@ int main(int argc, char** argv) {
   logSizeOfHeader(x);
 
   ReadProgramHeaderTable(x, fd);
+  ReadSectionHeaderTable(x, fd);
 
   return 0;
 }
