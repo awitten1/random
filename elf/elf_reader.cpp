@@ -1,11 +1,14 @@
 
+#include <cassert>
 #include <cstring>
 #include <elf.h>
+#include <memory>
 #include <stdexcept>
 #include <unistd.h>
 #include <fcntl.h>
 #include <iostream>
 #include <string>
+#include <sys/mman.h>
 
 // ELF Reader based on https://man7.org/linux/man-pages/man5/elf.5.html.
 
@@ -196,6 +199,10 @@ void logSizeOfHeader(Elf64_Ehdr x) {
   printf("Size of this header: %d.  Sizeof structure: %lu\n", x.e_ehsize, sizeof(x));
 }
 
+void logIndexOfStringTableInSectionHeaderTable(Elf64_Ehdr x) {
+  printf("Index of string table. e_shstrndx = %d\n", x.e_shstrndx);
+}
+
 uint64_t GetProgramHeaderOffset(Elf64_Ehdr x) {
   return x.e_phoff;
 }
@@ -278,6 +285,50 @@ void ReadProgramHeaderTable(Elf64_Ehdr x, int fd) {
   }
 }
 
+void ReadStringTable(Elf64_Shdr shdr, int fd) {
+  std::cout << "ReadStringTable" << std::endl;
+  if (shdr.sh_type != SHT_STRTAB) {
+    throw std::logic_error{"must provide SHT_STRTAB"};
+  }
+
+  std::unique_ptr<char[]> buf(new char[shdr.sh_size]);
+  int ret = pread(fd, buf.get(), shdr.sh_size, shdr.sh_offset);
+  if (ret != shdr.sh_size) {
+    throw std::runtime_error{"failed to read entire string table"};
+  }
+
+  uint32_t off = 0;
+  char* view = buf.get();
+
+  while (off < shdr.sh_size) {
+    assert(view[off] == '\0');
+    ++off;
+    std::string next = view + off;
+    off += next.size();
+    std::cout << next << std::endl;
+  }
+
+}
+
+void ReadSymbolTable(Elf64_Shdr shdr, int fd) {
+  if (shdr.sh_type != SHT_SYMTAB) {
+    throw std::logic_error{"Must provide a section header for a symbol table."};
+  }
+
+  Elf64_Sym sym;
+
+  if (sizeof(sym) != shdr.sh_entsize) {
+    throw std::logic_error{"size of symbol table is weird"};
+  }
+  int ret = pread(fd, &sym, shdr.sh_entsize, shdr.sh_offset);
+  if (ret != shdr.sh_entsize) {
+    throw std::runtime_error{"failed to read symbol table"};
+  }
+
+
+
+}
+
 void ReadSectionHeaderTable(Elf64_Ehdr x, int fd) {
 
   std::cout << "--------------------" << std::endl;
@@ -298,76 +349,53 @@ void ReadSectionHeaderTable(Elf64_Ehdr x, int fd) {
 
     switch (shdr.sh_type) {
     case SHT_NULL:
-      std::cout << "SHT_NULL: It does not have an associated section." << std::endl;
+      std::cout << "SHT_NULL" << std::endl;
       break;
     case SHT_PROGBITS:
-      std::cout << "SHT_PROGBITS: This section holds information defined by the "
-                   "program, whose format and meaning are determined "
-                   "solely by the program. " << std::endl;
+      std::cout << "SHT_PROGBITS" << std::endl;
       break;
 
     case SHT_SYMTAB:
-      std::cout << "SHT_SYMTAB: "
-        "This section holds a symbol table.  Typically, \n"
-        "SHT_SYMTAB provides symbols for link editing, \n"
-        "though it may also be used for dynamic linking.  As \n"
-        "a complete symbol table, it may contain many \n"
-        "symbols unnecessary for dynamic linking.  An object \n"
-        "file can also contain a SHT_DYNSYM section. \n" << std::endl;
+      std::cout << "SHT_SYMTAB" << std::endl;
+      ReadSymbolTable(shdr, fd);
       break;
 
     case SHT_STRTAB:
-      std::cout << "SHT_STRTAB: This section holds a string table.  An object file "
-                   "may have multiple string table sections." << std::endl;
+      std::cout << "SHT_STRTAB" << std::endl;
+      //if (i == x.e_shstrndx) {
+        ReadStringTable(shdr, fd);
+      //}
       break;
 
     case SHT_RELA:
-      std::cout << "SHT_RELA: "
-                   "This section holds relocation entries with explicit "
-                   "addends, such as type Elf32_Rela for the 32-bit "
-                   "class of object files.  An object may have multiple "
-                   "relocation sections. " << std::endl;
+      std::cout << "SHT_RELA" << std::endl;
       break;
 
     case SHT_HASH:
-      std::cout << "SHT_HASH: This section holds a symbol hash table.  An object "
-                   "participating in dynamic linking must contain a "
-                   "symbol hash table.  An object file may have only "
-                   "one hash table. " << std::endl;
+      std::cout << "SHT_HASH" << std::endl;
       break;
 
     case SHT_DYNAMIC:
-      std::cout << "SHT_DYNAMIC: This section holds information for dynamic linking. "
-                   "An object file may have only one dynamic section. " << std::endl;
+      std::cout << "SHT_DYNAMIC" << std::endl;
       break;
 
     case SHT_NOTE:
-      std::cout << "SHT_NOTE: This section holds notes (ElfN_Nhdr)." << std::endl;
+      std::cout << "SHT_NOTE" << std::endl;
       break;
 
     case SHT_NOBITS:
-      std::cout << "SHT_NOBITS: A section of this type occupies no space in the "
-                   "file but otherwise resembles SHT_PROGBITS. "
-                   "Although this section contains no bytes, the "
-                   "sh_offset member contains the conceptual file "
-                   "offset. " << std::endl;
+      std::cout << "SHT_NOBITS" << std::endl;
       break;
 
     case SHT_REL:
-      std::cout << "SHT_REL: This section holds relocation offsets without "
-                   "explicit addends, such as type Elf32_Rel for the "
-                   "32-bit class of object files.  An object file may "
-                   "have multiple relocation sections. " << std::endl;
+      std::cout << "SHT_REL" << std::endl;
       break;
     case SHT_SHLIB:
-      std::cout << "SHT_SHLIB: This section is reserved but has unspecified "
-                   "semantics." << std::endl;
+      std::cout << "SHT_SHLIB" << std::endl;
       break;
 
     case SHT_DYNSYM:
-      std::cout << "SHT_DYNSYM: This section holds a minimal set of dynamic linking "
-                   "symbols.  An object file can also contain a "
-                  "SHT_SYMTAB section. " << std::endl;
+      std::cout << "SHT_DYNSYM" << std::endl;
       break;
 
     case SHT_LOPROC:
@@ -378,18 +406,29 @@ void ReadSectionHeaderTable(Elf64_Ehdr x, int fd) {
       break;
 
     case SHT_LOUSER:
-      std::cout << "SHT_LOUSER: This value specifies the lower bound of the range "
-                   "of indices reserved for application programs." << std::endl;
+      std::cout << "SHT_LOUSER" << std::endl;
       break;
     case SHT_HIUSER:
-      std::cout << "SHT_HIUSER: This value specifies the upper bound of the range "
-                   "of indices reserved for application programs. "
-                   "Section types between SHT_LOUSER and SHT_HIUSER may "
-                   "be used by the application, without conflicting "
-                   "with current or future system-defined section "
-                   "types." << std::endl;
+      std::cout << "SHT_HIUSER" << std::endl;
       break;
     }
+
+    bool writable_during_execution = shdr.sh_flags & SHF_WRITE;
+    bool contains_executable_ins = shdr.sh_flags & SHF_EXECINSTR;
+    bool occupies_memory_during_exec = shdr.sh_flags & SHF_ALLOC;
+
+    std::cout << "writable_during_execution = " << writable_during_execution << ", "
+      << "contains_executable_ins = " << contains_executable_ins
+      << ", occupies_memory_during_exec = " << occupies_memory_during_exec << std::endl;
+
+    std::cout << "sh_offset = " << shdr.sh_offset << std::endl;
+    if (occupies_memory_during_exec) {
+      printf("%lx\n", shdr.sh_addr);
+      if (shdr.sh_addr == 0) {
+        throw std::runtime_error{"should be address"};
+      }
+    }
+
   }
 }
 
@@ -423,6 +462,7 @@ int main(int argc, char** argv) {
   logProgramHeaderFileOffset(x);
   logSectionHeaderFileOffset(x);
   logSizeOfHeader(x);
+  logIndexOfStringTableInSectionHeaderTable(x);
 
   ReadProgramHeaderTable(x, fd);
   ReadSectionHeaderTable(x, fd);
