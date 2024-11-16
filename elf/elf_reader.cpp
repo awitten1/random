@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 
+// ELF Reader based on https://man7.org/linux/man-pages/man5/elf.5.html.
 
 void validateElfN_Ehdr(Elf64_Ehdr x) {
   if (x.e_ident[EI_MAG0] != ELFMAG0) {
@@ -207,7 +208,25 @@ uint64_t ProgramHeaderEntrySize(Elf64_Ehdr x) {
   return x.e_phentsize;
 }
 
+// Only meaningful for executable and shared object files.
+//  readelf --program-headers <object file>
+//  or readelf --segments <object file>
+//
+// "An executable or shared object file's program header table is an
+// array of structures, each describing a segment or other
+// information the system needs to prepare the program for
+// execution.  An object file segment contains one or more sections.
+// Program headers are meaningful only for executable and shared
+// object files.  A file specifies its own program header size with
+// the ELF header's e_phentsize and e_phnum members.  The ELF
+// program header is described by the type Elf32_Phdr or Elf64_Phdr
+// depending on the architecture:"
 void ReadProgramHeaderTable(Elf64_Ehdr x, int fd) {
+
+  std::cout << "--------------------" << std::endl;
+  std::cout << "Program Header Table" << std::endl;
+  std::cout << "--------------------" << std::endl;
+
   for (uint64_t i = 0; i < x.e_phnum; ++i) {
     uint64_t offset = i * x.e_phentsize + x.e_phoff;
 
@@ -217,14 +236,54 @@ void ReadProgramHeaderTable(Elf64_Ehdr x, int fd) {
     }
 
     int ret = pread(fd, &phdr, x.e_phentsize, offset);
-    std::cout << x.e_phentsize << ", " << sizeof(Elf64_Phdr) << std::endl;
     if (ret != x.e_phentsize) {
       throw std::runtime_error{"failed to read program header"};
     }
+
+    switch(phdr.p_type) {
+      case PT_NULL:
+        break;
+      case PT_LOAD:
+        std::cout << "PT_LOAD: loadable segment" << std::endl;
+        break;
+      case PT_DYNAMIC:
+        std::cout << "PT_DYNAMIC: dynamic linking info" << std::endl;
+        break;
+      case PT_INTERP:
+        std::cout << "PT_INTERP: interpreter info!" << std::endl;
+        break;
+      case PT_NOTE:
+        std::cout << "PT_NOTE: notes" << std::endl;
+        break;
+      case PT_SHLIB:
+        std::cout << "PT_SHLIB" << std::endl;
+        break;
+      case PT_GNU_EH_FRAME:
+        std::cout << "PT_GNU_EH_FRAME" << std::endl;
+        break;
+      case PT_PHDR:
+        std::cout << "PT_PHDR: program header table location entry" << std::endl;
+        break;
+      case PT_LOPROC:
+        std::cout << "PT_LOPROC: processor specific low" << std::endl;
+        break;
+      case PT_HIPROC:
+        std::cout << "PT_HIPROC: processor specific high" << std::endl;
+        break;
+      case PT_GNU_STACK:
+        std::cout << "PT_GNU_STACK" << std::endl;
+        break;
+    }
+
   }
 }
 
 void ReadSectionHeaderTable(Elf64_Ehdr x, int fd) {
+
+  std::cout << "--------------------" << std::endl;
+  std::cout << "Section Header Table" << std::endl;
+  std::cout << "--------------------" << std::endl;
+
   for (uint64_t i = 0; i < x.e_shnum; ++i) {
     Elf64_Shdr shdr;
     uint64_t offset = i * x.e_shentsize + x.e_shoff;
@@ -233,9 +292,103 @@ void ReadSectionHeaderTable(Elf64_Ehdr x, int fd) {
     }
 
     int ret = pread(fd, &shdr, x.e_shentsize, offset);
-    std::cout << x.e_shentsize << ", " << sizeof(Elf64_Shdr) << std::endl;
     if (ret != x.e_shentsize) {
       throw std::runtime_error{"failed to read section header"};
+    }
+
+    switch (shdr.sh_type) {
+    case SHT_NULL:
+      std::cout << "SHT_NULL: It does not have an associated section." << std::endl;
+      break;
+    case SHT_PROGBITS:
+      std::cout << "SHT_PROGBITS: This section holds information defined by the "
+                   "program, whose format and meaning are determined "
+                   "solely by the program. " << std::endl;
+      break;
+
+    case SHT_SYMTAB:
+      std::cout << "SHT_SYMTAB: "
+        "This section holds a symbol table.  Typically, \n"
+        "SHT_SYMTAB provides symbols for link editing, \n"
+        "though it may also be used for dynamic linking.  As \n"
+        "a complete symbol table, it may contain many \n"
+        "symbols unnecessary for dynamic linking.  An object \n"
+        "file can also contain a SHT_DYNSYM section. \n" << std::endl;
+      break;
+
+    case SHT_STRTAB:
+      std::cout << "SHT_STRTAB: This section holds a string table.  An object file "
+                   "may have multiple string table sections." << std::endl;
+      break;
+
+    case SHT_RELA:
+      std::cout << "SHT_RELA: "
+                   "This section holds relocation entries with explicit "
+                   "addends, such as type Elf32_Rela for the 32-bit "
+                   "class of object files.  An object may have multiple "
+                   "relocation sections. " << std::endl;
+      break;
+
+    case SHT_HASH:
+      std::cout << "SHT_HASH: This section holds a symbol hash table.  An object "
+                   "participating in dynamic linking must contain a "
+                   "symbol hash table.  An object file may have only "
+                   "one hash table. " << std::endl;
+      break;
+
+    case SHT_DYNAMIC:
+      std::cout << "SHT_DYNAMIC: This section holds information for dynamic linking. "
+                   "An object file may have only one dynamic section. " << std::endl;
+      break;
+
+    case SHT_NOTE:
+      std::cout << "SHT_NOTE: This section holds notes (ElfN_Nhdr)." << std::endl;
+      break;
+
+    case SHT_NOBITS:
+      std::cout << "SHT_NOBITS: A section of this type occupies no space in the "
+                   "file but otherwise resembles SHT_PROGBITS. "
+                   "Although this section contains no bytes, the "
+                   "sh_offset member contains the conceptual file "
+                   "offset. " << std::endl;
+      break;
+
+    case SHT_REL:
+      std::cout << "SHT_REL: This section holds relocation offsets without "
+                   "explicit addends, such as type Elf32_Rel for the "
+                   "32-bit class of object files.  An object file may "
+                   "have multiple relocation sections. " << std::endl;
+      break;
+    case SHT_SHLIB:
+      std::cout << "SHT_SHLIB: This section is reserved but has unspecified "
+                   "semantics." << std::endl;
+      break;
+
+    case SHT_DYNSYM:
+      std::cout << "SHT_DYNSYM: This section holds a minimal set of dynamic linking "
+                   "symbols.  An object file can also contain a "
+                  "SHT_SYMTAB section. " << std::endl;
+      break;
+
+    case SHT_LOPROC:
+      std::cout << "SHT_LOPROC" << std::endl;
+      break;
+    case SHT_HIPROC:
+      std::cout << "SHT_HIPROC" << std::endl;
+      break;
+
+    case SHT_LOUSER:
+      std::cout << "SHT_LOUSER: This value specifies the lower bound of the range "
+                   "of indices reserved for application programs." << std::endl;
+      break;
+    case SHT_HIUSER:
+      std::cout << "SHT_HIUSER: This value specifies the upper bound of the range "
+                   "of indices reserved for application programs. "
+                   "Section types between SHT_LOUSER and SHT_HIUSER may "
+                   "be used by the application, without conflicting "
+                   "with current or future system-defined section "
+                   "types." << std::endl;
+      break;
     }
   }
 }
@@ -258,6 +411,8 @@ int main(int argc, char** argv) {
     throw std::runtime_error{strerror(errno)};
   }
 
+  // Reading headers.
+  // readelf -h <object file>
   validateElfN_Ehdr(x);
   checkAndLogArchitecture(x);
   logEncoding(x);
