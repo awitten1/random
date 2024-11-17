@@ -1,5 +1,6 @@
 
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <elf.h>
 #include <memory>
@@ -9,6 +10,9 @@
 #include <iostream>
 #include <string>
 #include <sys/mman.h>
+#include <unordered_map>
+#include <vector>
+#include <cxxabi.h>
 
 // ELF Reader based on https://man7.org/linux/man-pages/man5/elf.5.html.
 
@@ -285,55 +289,183 @@ void ReadProgramHeaderTable(Elf64_Ehdr x, int fd) {
   }
 }
 
-void ReadStringTable(Elf64_Shdr shdr, int fd) {
-  std::cout << "ReadStringTable" << std::endl;
-  if (shdr.sh_type != SHT_STRTAB) {
-    throw std::logic_error{"must provide SHT_STRTAB"};
+std::string demangle(const std::string& mangled_name) {
+  int status;
+  char* realname = abi::__cxa_demangle(mangled_name.c_str(), NULL, NULL, &status);
+  if (realname == nullptr) {
+    return "";
   }
-
-  std::unique_ptr<char[]> buf(new char[shdr.sh_size]);
-  int ret = pread(fd, buf.get(), shdr.sh_size, shdr.sh_offset);
-  if (ret != shdr.sh_size) {
-    throw std::runtime_error{"failed to read entire string table"};
-  }
-
-  uint32_t off = 0;
-  char* view = buf.get();
-
-  while (off < shdr.sh_size) {
-    assert(view[off] == '\0');
-    ++off;
-    std::string next = view + off;
-    off += next.size();
-    std::cout << next << std::endl;
-  }
-
+  std::string ret = realname;
+  free(realname);
+  return ret;
 }
 
-void ReadSymbolTable(Elf64_Shdr shdr, int fd) {
+class ElfStrings {
+public:
+  ElfStrings(Elf64_Ehdr hdr, int fd) : fd_(fd), hdr_(hdr) {}
+
+  void ReadStringTable(Elf64_Shdr shdr, uint32_t idx) {
+    if (shdr.sh_type != SHT_STRTAB) {
+      throw std::logic_error{"must provide SHT_STRTAB section header entry."};
+    }
+
+    std::unique_ptr<char[]> buf(new char[shdr.sh_size]);
+    int ret = pread(fd_, buf.get(), shdr.sh_size, shdr.sh_offset);
+    if (ret != shdr.sh_size) {
+      throw std::runtime_error{"failed to read entire string table"};
+    }
+
+    uint32_t off = 0;
+    char* view = buf.get();
+
+    m_[idx] = std::move(buf);
+
+  }
+
+  std::string GetStringForSymbol(Elf64_Sym sym, uint32_t sh_link_for_symtab) const {
+    auto it = m_.find(sh_link_for_symtab);
+    if (it == m_.end()) {
+      throw std::runtime_error{"could not find strtab for symtab."};
+    }
+    char* buf = it->second.get();
+    return std::string(&buf[sym.st_name]);
+  }
+
+  std::string LookupHeaderName(uint32_t name) const {
+    auto it = m_.find(GetIdxOfSectionHeaderStringTable());
+    assert(it != m_.end());
+    return std::string(&it->second[name]);
+  }
+
+private:
+  int fd_;
+  Elf64_Ehdr hdr_;
+
+  uint32_t GetIdxOfSectionHeaderStringTable() const {
+    return hdr_.e_shstrndx;
+  }
+
+  // maps section header index -> in memory string table.
+  // Only defined for .strtab sections.
+  std::unordered_map<uint32_t, std::unique_ptr<char[]>> m_;
+};
+
+std::string GetVisibility(Elf64_Sym sym) {
+  auto vis = ELF64_ST_VISIBILITY(sym.st_other);
+  switch(vis) {
+  case STV_DEFAULT:
+    return "default";
+  case STV_INTERNAL:
+    return "internal";
+  case STV_HIDDEN:
+    return "hidden";
+  case STV_PROTECTED:
+    return "protected";
+  }
+  throw std::runtime_error{"unreachable"};
+}
+
+std::string GetBinding(Elf64_Sym sym) {
+  auto bind = ELF32_ST_BIND(sym.st_info);
+  switch(bind) {
+  case STB_LOCAL:
+    return "local";
+  case STB_GLOBAL:
+    return "global";
+  case STB_WEAK:
+    return "weak";
+  case STB_GNU_UNIQUE:
+    return "unique";
+  }
+  throw std::runtime_error{"unhandled binding for symbol"};
+}
+
+std::string GetType(Elf64_Sym sym) {
+  auto type = ELF32_ST_TYPE(sym.st_info);
+  switch(type) {
+  case STT_NOTYPE:
+    return "NOTYPE";
+  case STT_OBJECT:
+    return "DATA_OBJECT";
+  case STT_FUNC:
+    return "FUNC";
+  case STT_SECTION:
+    return "SECTION";
+  case STT_FILE:
+    return "FILE";
+  case STT_COMMON:
+    return "COMMON";
+  case STT_TLS:
+    return "TLS";
+  case STT_GNU_IFUNC:
+    return "INDIRECT";
+  }
+  throw std::runtime_error{"unhandled type for symbol"};
+}
+
+void ReadSymbolTable(Elf64_Shdr shdr, int fd, const ElfStrings& efs) {
   if (shdr.sh_type != SHT_SYMTAB) {
     throw std::logic_error{"Must provide a section header for a symbol table."};
   }
 
-  Elf64_Sym sym;
 
-  if (sizeof(sym) != shdr.sh_entsize) {
-    throw std::logic_error{"size of symbol table is weird"};
-  }
-  int ret = pread(fd, &sym, shdr.sh_entsize, shdr.sh_offset);
-  if (ret != shdr.sh_entsize) {
+  std::unique_ptr<char[]> buf(new char[shdr.sh_size]);
+  int ret = pread(fd, buf.get(), shdr.sh_size, shdr.sh_offset);
+  if (ret != shdr.sh_size) {
     throw std::runtime_error{"failed to read symbol table"};
   }
 
+  Elf64_Sym* sym_array = (Elf64_Sym*)buf.get();
 
+  assert(shdr.sh_size % shdr.sh_entsize == 0);
+  uint32_t num_entries = shdr.sh_size / shdr.sh_entsize;
 
+  for (uint32_t i = 0; i < num_entries; ++i) {
+    if (sym_array[i].st_name == 0) {
+      continue;
+    }
+    // https://docs.oracle.com/cd/E19683-01/816-1386/6m7qcoblj/index.html#chapter6-47976
+    // sh_link for symtab sections references the needed strtab section.
+    std::string str = efs.GetStringForSymbol(sym_array[i], shdr.sh_link);
+    std::string vis = GetVisibility(sym_array[i]);
+    std::string binding = GetBinding(sym_array[i]);
+    std::string type = GetType(sym_array[i]);
+    printf("%s %s %s\n", type.c_str(), vis.c_str(), str.c_str());
+  }
+
+}
+
+ElfStrings BuildStringTable(Elf64_Ehdr hdr, int fd) {
+  ElfStrings es(hdr, fd);
+  int seen = 0;
+  for (uint64_t i = 0; i < hdr.e_shnum; ++i) {
+    Elf64_Shdr shdr;
+    uint64_t offset = i * hdr.e_shentsize + hdr.e_shoff;
+    if (sizeof(shdr) != hdr.e_shentsize) {
+      throw std::runtime_error{"Elf64_Shdr size does not match x.e_shentsize"};
+    }
+
+    int ret = pread(fd, &shdr, hdr.e_shentsize, offset);
+    if (ret != hdr.e_shentsize) {
+      throw std::runtime_error{"failed to read section header"};
+    }
+
+    if (shdr.sh_type == SHT_STRTAB) {
+      es.ReadStringTable(shdr, i);
+    }
+
+  }
+
+  return es;
 }
 
 void ReadSectionHeaderTable(Elf64_Ehdr x, int fd) {
 
-  std::cout << "--------------------" << std::endl;
-  std::cout << "Section Header Table" << std::endl;
-  std::cout << "--------------------" << std::endl;
+  // std::cout << "--------------------" << std::endl;
+  // std::cout << "Section Header Table" << std::endl;
+  // std::cout << "--------------------" << std::endl;
+
+  ElfStrings strtab = BuildStringTable(x, fd);
 
   for (uint64_t i = 0; i < x.e_shnum; ++i) {
     Elf64_Shdr shdr;
@@ -349,85 +481,78 @@ void ReadSectionHeaderTable(Elf64_Ehdr x, int fd) {
 
     switch (shdr.sh_type) {
     case SHT_NULL:
-      std::cout << "SHT_NULL" << std::endl;
+      // std::cout << "SHT_NULL" << std::endl;
       break;
     case SHT_PROGBITS:
-      std::cout << "SHT_PROGBITS" << std::endl;
-      break;
-
-    case SHT_SYMTAB:
-      std::cout << "SHT_SYMTAB" << std::endl;
-      ReadSymbolTable(shdr, fd);
+      // std::cout << "SHT_PROGBITS" << std::endl;
       break;
 
     case SHT_STRTAB:
-      std::cout << "SHT_STRTAB" << std::endl;
-      //if (i == x.e_shstrndx) {
-        ReadStringTable(shdr, fd);
-      //}
+      // std::cout << "SHT_STRTAB" << std::endl;
+      break;
+
+    case SHT_SYMTAB:
+      // std::cout << "SHT_SYMTAB" << std::endl;
+      ReadSymbolTable(shdr, fd, strtab);
       break;
 
     case SHT_RELA:
-      std::cout << "SHT_RELA" << std::endl;
+      // std::cout << "SHT_RELA" << std::endl;
       break;
 
     case SHT_HASH:
-      std::cout << "SHT_HASH" << std::endl;
+      // std::cout << "SHT_HASH" << std::endl;
       break;
 
     case SHT_DYNAMIC:
-      std::cout << "SHT_DYNAMIC" << std::endl;
+      // std::cout << "SHT_DYNAMIC" << std::endl;
       break;
 
     case SHT_NOTE:
-      std::cout << "SHT_NOTE" << std::endl;
+      // std::cout << "SHT_NOTE" << std::endl;
       break;
 
     case SHT_NOBITS:
-      std::cout << "SHT_NOBITS" << std::endl;
+      // std::cout << "SHT_NOBITS" << std::endl;
       break;
 
     case SHT_REL:
-      std::cout << "SHT_REL" << std::endl;
+      // std::cout << "SHT_REL" << std::endl;
       break;
     case SHT_SHLIB:
-      std::cout << "SHT_SHLIB" << std::endl;
+      // std::cout << "SHT_SHLIB" << std::endl;
       break;
 
     case SHT_DYNSYM:
-      std::cout << "SHT_DYNSYM" << std::endl;
+      // std::cout << "SHT_DYNSYM" << std::endl;
       break;
 
     case SHT_LOPROC:
-      std::cout << "SHT_LOPROC" << std::endl;
+      // std::cout << "SHT_LOPROC" << std::endl;
       break;
     case SHT_HIPROC:
-      std::cout << "SHT_HIPROC" << std::endl;
+      // std::cout << "SHT_HIPROC" << std::endl;
       break;
 
     case SHT_LOUSER:
-      std::cout << "SHT_LOUSER" << std::endl;
+      // std::cout << "SHT_LOUSER" << std::endl;
       break;
     case SHT_HIUSER:
-      std::cout << "SHT_HIUSER" << std::endl;
+      // std::cout << "SHT_HIUSER" << std::endl;
+      break;
+    case SHT_INIT_ARRAY:
+      // std::cout << "SHT_INIT_ARRAY" << std::endl;
+      break;
+    case SHT_FINI_ARRAY:
+      // std::cout << "SHT_FINI_ARRAY" << std::endl;
       break;
     }
 
-    bool writable_during_execution = shdr.sh_flags & SHF_WRITE;
-    bool contains_executable_ins = shdr.sh_flags & SHF_EXECINSTR;
-    bool occupies_memory_during_exec = shdr.sh_flags & SHF_ALLOC;
+    // std::cout << "name = " << strtab.LookupHeaderName(shdr.sh_name) << std::endl;
 
-    std::cout << "writable_during_execution = " << writable_during_execution << ", "
-      << "contains_executable_ins = " << contains_executable_ins
-      << ", occupies_memory_during_exec = " << occupies_memory_during_exec << std::endl;
-
-    std::cout << "sh_offset = " << shdr.sh_offset << std::endl;
-    if (occupies_memory_during_exec) {
-      printf("%lx\n", shdr.sh_addr);
-      if (shdr.sh_addr == 0) {
-        throw std::runtime_error{"should be address"};
-      }
-    }
+    // bool writable_during_execution = shdr.sh_flags & SHF_WRITE;
+    // bool contains_executable_ins = shdr.sh_flags & SHF_EXECINSTR;
+    // bool occupies_memory_during_exec = shdr.sh_flags & SHF_ALLOC;
 
   }
 }
@@ -453,18 +578,18 @@ int main(int argc, char** argv) {
   // Reading headers.
   // readelf -h <object file>
   validateElfN_Ehdr(x);
-  checkAndLogArchitecture(x);
-  logEncoding(x);
-  logOsAbi(x);
-  logObjectFileType(x);
-  logMachine(x);
-  logEntryPointAddress(x);
-  logProgramHeaderFileOffset(x);
-  logSectionHeaderFileOffset(x);
-  logSizeOfHeader(x);
-  logIndexOfStringTableInSectionHeaderTable(x);
+  // checkAndLogArchitecture(x);
+  // logEncoding(x);
+  // logOsAbi(x);
+  // logObjectFileType(x);
+  // logMachine(x);
+  // logEntryPointAddress(x);
+  // logProgramHeaderFileOffset(x);
+  // logSectionHeaderFileOffset(x);
+  // logSizeOfHeader(x);
+  // logIndexOfStringTableInSectionHeaderTable(x);
 
-  ReadProgramHeaderTable(x, fd);
+  // ReadProgramHeaderTable(x, fd);
   ReadSectionHeaderTable(x, fd);
 
   return 0;
