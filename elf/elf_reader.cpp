@@ -13,6 +13,8 @@
 #include <unordered_map>
 #include <vector>
 #include <cxxabi.h>
+#include <sys/stat.h>
+#include <span>
 
 // ELF Reader based on https://man7.org/linux/man-pages/man5/elf.5.html.
 
@@ -430,10 +432,63 @@ void ReadSymbolTable(Elf64_Shdr shdr, int fd, const ElfStrings& efs) {
     std::string vis = GetVisibility(sym_array[i]);
     std::string binding = GetBinding(sym_array[i]);
     std::string type = GetType(sym_array[i]);
-    printf("%s %s %s\n", type.c_str(), vis.c_str(), str.c_str());
+    printf("%016lx %s %s %s\n", sym_array[i].st_value, type.c_str(), vis.c_str(), str.c_str());
   }
 
 }
+
+
+class ElfFile {
+public:
+  ElfFile(const std::string& file_name) {
+    int fd = open(file_name.c_str(), O_RDONLY);
+    if (fd == -1) {
+      throw std::runtime_error{"failed to open file"};
+    }
+
+    struct stat st;
+    int ret = fstat(fd, &st);
+    if (ret == -1) {
+      throw std::runtime_error{"failed to stat file"};
+    }
+
+    sz_ = st.st_size;
+
+    ptr_ = mmap(NULL, sz_, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (ptr_ == MAP_FAILED) {
+      throw std::runtime_error{"failed to map file into memory"};
+    }
+
+    ValidateHeader();
+
+  }
+
+  void ValidateHeader() {
+    Elf64_Ehdr* hdr = (Elf64_Ehdr*)ptr_;
+    validateElfN_Ehdr(*hdr);
+  }
+
+  ~ElfFile() {
+    munmap(ptr_, sz_);
+  }
+
+
+
+private:
+
+  Elf64_Ehdr* getElfHeader() {
+    return (Elf64_Ehdr*)ptr_;
+  }
+
+  std::span<Elf64_Shdr> getSectionHeaders() {
+    auto elf_header = getElfHeader();
+    Elf64_Shdr* shdrs = (Elf64_Shdr*)((char*)ptr_ + elf_header->e_shoff);
+    return std::span{shdrs, elf_header->e_shnum};
+  }
+
+  void* ptr_;
+  size_t sz_;
+};
 
 ElfStrings BuildStringTable(Elf64_Ehdr hdr, int fd) {
   ElfStrings es(hdr, fd);
@@ -558,26 +613,17 @@ void ReadSectionHeaderTable(Elf64_Ehdr x, int fd) {
 }
 
 int main(int argc, char** argv) {
-  Elf64_Ehdr x;
-  memset(&x, 0, sizeof(x));
+  // Elf64_Ehdr x;
+  // memset(&x, 0, sizeof(x));
 
   std::string filename = argv[1];
 
-  int ret;
-  int fd = open(filename.data(), O_RDONLY);
-
-  if (fd == -1) {
-    throw std::runtime_error{strerror(errno)};
-  }
-
-  ret = read(fd, &x, sizeof(x));
-  if (ret != sizeof(x)) {
-    throw std::runtime_error{strerror(errno)};
-  }
+  ElfFile elf_file(filename);
+  elf_file.ValidateHeader();
 
   // Reading headers.
   // readelf -h <object file>
-  validateElfN_Ehdr(x);
+  // validateElfN_Ehdr(x);
   // checkAndLogArchitecture(x);
   // logEncoding(x);
   // logOsAbi(x);
@@ -590,7 +636,7 @@ int main(int argc, char** argv) {
   // logIndexOfStringTableInSectionHeaderTable(x);
 
   // ReadProgramHeaderTable(x, fd);
-  ReadSectionHeaderTable(x, fd);
+  // ReadSectionHeaderTable(x, fd);
 
   return 0;
 }
