@@ -17,6 +17,8 @@
 #include <span>
 
 // ELF Reader based on https://man7.org/linux/man-pages/man5/elf.5.html.
+//
+// g++ elf_reader.cpp -std=c++20
 
 void validateElfN_Ehdr(Elf64_Ehdr x) {
   if (x.e_ident[EI_MAG0] != ELFMAG0) {
@@ -472,7 +474,20 @@ public:
     munmap(ptr_, sz_);
   }
 
-
+  void DumpSymbols() {
+    for (auto&& shdr : getSectionHeaders()) {
+      if (shdr.sh_type == SHT_SYMTAB) {
+        std::span<Elf64_Sym> syms = getSymbolTable(shdr);
+        for (Elf64_Sym sym : syms) {
+          std::string str = lookupString(shdr.sh_link, sym.st_name);
+          std::string vis = GetVisibility(sym);
+          std::string binding = GetBinding(sym);
+          std::string type = GetType(sym);
+          printf("%016lx %s %s %s\n", sym.st_value, type.c_str(), vis.c_str(), str.c_str());
+        }
+      }
+    }
+  }
 
 private:
 
@@ -480,10 +495,22 @@ private:
     return (Elf64_Ehdr*)ptr_;
   }
 
+  std::span<Elf64_Sym> getSymbolTable(Elf64_Shdr shdr) {
+    return std::span{(Elf64_Sym*)((char*)ptr_ + shdr.sh_offset), shdr.sh_size / sizeof(Elf64_Sym)};
+  }
+
   std::span<Elf64_Shdr> getSectionHeaders() {
     auto elf_header = getElfHeader();
     Elf64_Shdr* shdrs = (Elf64_Shdr*)((char*)ptr_ + elf_header->e_shoff);
     return std::span{shdrs, elf_header->e_shnum};
+  }
+
+  std::string lookupString(uint16_t section_idx, uint32_t name) {
+    auto& section_header = getSectionHeaders()[section_idx];
+    if (section_header.sh_type != SHT_STRTAB) {
+      throw std::runtime_error{"provided section was not a .strtab section"};
+    }
+    return &((char*)ptr_ + section_header.sh_offset)[name];
   }
 
   void* ptr_;
@@ -620,6 +647,7 @@ int main(int argc, char** argv) {
 
   ElfFile elf_file(filename);
   elf_file.ValidateHeader();
+  elf_file.DumpSymbols();
 
   // Reading headers.
   // readelf -h <object file>
