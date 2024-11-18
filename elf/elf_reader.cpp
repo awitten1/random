@@ -474,6 +474,7 @@ public:
     munmap(ptr_, sz_);
   }
 
+  // readelf --symbols --wide <elf binary>
   void DumpSymbols() {
     for (auto&& shdr : getSectionHeaders()) {
       if (shdr.sh_type == SHT_SYMTAB) {
@@ -483,7 +484,8 @@ public:
           std::string vis = GetVisibility(sym);
           std::string binding = GetBinding(sym);
           std::string type = GetType(sym);
-          printf("%016lx %s %s %s\n", sym.st_value, type.c_str(), vis.c_str(), str.c_str());
+          std::string section = lookupSectionName(sym.st_shndx);
+          printf("%016lx %s %s %s %s %s\n", sym.st_value, binding.c_str(), type.c_str(), section.c_str(), vis.c_str(), str.c_str());
         }
       }
     }
@@ -505,12 +507,20 @@ private:
     return std::span{shdrs, elf_header->e_shnum};
   }
 
-  std::string lookupString(uint16_t section_idx, uint32_t name) {
+  std::string lookupString(uint32_t section_idx, uint32_t name) {
     auto& section_header = getSectionHeaders()[section_idx];
     if (section_header.sh_type != SHT_STRTAB) {
       throw std::runtime_error{"provided section was not a .strtab section"};
     }
     return &((char*)ptr_ + section_header.sh_offset)[name];
+  }
+
+  std::string lookupSectionName(uint32_t section_idx) {
+    if (section_idx > getSectionHeaders().size()) {
+      return "<unknown>";
+    }
+    auto sh_name = getSectionHeaders()[section_idx].sh_name;
+    return lookupString(getElfHeader()->e_shstrndx, sh_name);
   }
 
   void* ptr_;
