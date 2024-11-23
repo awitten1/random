@@ -491,10 +491,21 @@ public:
     }
   }
 
+  void ListSections() {
+    for (int i = 0; i < getSectionHeaders().size(); ++i) {
+      std::string section_name = lookupSectionName(i);
+      std::cout << section_name << std::endl;
+    }
+  }
+
 private:
 
   Elf64_Ehdr* getElfHeader() {
     return (Elf64_Ehdr*)ptr_;
+  }
+
+  uint32_t getIdxOfShstrtab() {
+    return getElfHeader()->e_shstrndx;
   }
 
   std::span<Elf64_Sym> getSymbolTable(Elf64_Shdr shdr) {
@@ -658,6 +669,7 @@ int main(int argc, char** argv) {
   ElfFile elf_file(filename);
   elf_file.ValidateHeader();
   elf_file.DumpSymbols();
+  elf_file.ListSections();
 
   // Reading headers.
   // readelf -h <object file>
