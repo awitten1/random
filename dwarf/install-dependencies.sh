@@ -9,15 +9,17 @@ deps=(
   zlib1g-dev
   libzstd1
   cmake
+  curl
+  ninja-build
 )
 
 install_libdwarf() {
   DIR=$PWD
 
   LIBDWARF_VERSION=0.11.1
-
-  curl -L "https://github.com/davea42/libdwarf-code/releases/download/v${libd_v}/libdwarf-${libd_v}.tar.xz" \
-    -o $DIR/libdwarf-${LIBDWARF_VERSION}.tar.xz
+  dwarf_path="https://github.com/davea42/libdwarf-code/releases/download/v${LIBDWARF_VERSION}/libdwarf-${LIBDWARF_VERSION}.tar.xz"
+  echo "Curling URL $dwarf_path"
+  curl -L  $dwarf_path -o $DIR/libdwarf-${LIBDWARF_VERSION}.tar.xz
   tar -xf $DIR/libdwarf-${LIBDWARF_VERSION}.tar.xz
   rm -rf /tmp/build
   mkdir /tmp/build
@@ -33,5 +35,5 @@ install_deps() {
   apt install -y ${deps[@]}
 }
 
-install_libdwarf
 install_deps
+install_libdwarf
