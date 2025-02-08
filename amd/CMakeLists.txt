@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 project(amduprof-play LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # For me, compile with:
 # cmake -B build -DCMAKE_PREFIX_PATH=/opt/AMDuProf_5.0-1479/
