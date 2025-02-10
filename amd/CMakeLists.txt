@@ -13,6 +13,12 @@ find_library(AMD_POWER_PROFILE_LIB AMDPowerProfileAPI PATH_SUFFIXES bin REQUIRED
 get_filename_component(AMD_U_PROF_DIR ${AMD_POWER_PROFILE} DIRECTORY)
 
 add_executable(CollectCounters CollectAllCounters.cpp)
+add_executable(LogTemperatures LogTemperatures.cpp enum_utils.cpp)
 
 target_include_directories(CollectCounters PRIVATE ${AMD_U_PROF_DIR})
 target_link_libraries(CollectCounters PRIVATE ${AMD_POWER_PROFILE_LIB})
+
+target_include_directories(LogTemperatures PRIVATE ${AMD_U_PROF_DIR})
+target_link_libraries(LogTemperatures PRIVATE ${AMD_POWER_PROFILE_LIB})
+
+
