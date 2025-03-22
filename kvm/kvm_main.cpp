@@ -1,5 +1,6 @@
 
 
+#include <bitset>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -55,6 +56,26 @@ int main() {
     if (api_version != 12) {
         // https://github.com/torvalds/linux/blob/88d324e69ea9f3ae1c1905ea75d717c08bdb8e15/Documentation/virt/kvm/api.rst#4-api-description
         std::cerr << "KVM_GET_API_VERSION ioctl must return 12. reason = " << strerror(errno) << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    int supported_vm_types_bitmap = ioctl(fd, KVM_CHECK_EXTENSION, KVM_CAP_VM_TYPES);
+    if (supported_vm_types_bitmap == -1) {
+        std::cerr << "kvm get vm types not supported" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    if (!(supported_vm_types_bitmap & (1 << KVM_X86_DEFAULT_VM))) {
+        std::cerr << "KVM_X86_DEFAULT_VM not supported" << std::endl;
+    }
+
+    if (!(supported_vm_types_bitmap & (1 << KVM_X86_SW_PROTECTED_VM))) {
+        std::cerr << "KVM_X86_SW_PROTECTED_VM not supported" << std::endl;
+    }
+
+    int ret = ioctl(fd, KVM_CREATE_VM, KVM_X86_DEFAULT_VM);
+    if (ret == -1) {
+        std::cerr << "failed to create VM. reason = " << strerror(errno) << std::endl;
         return EXIT_FAILURE;
     }
 
