@@ -11,4 +11,9 @@ set(CMAKE_ASM_FLAGS "${CFLAGS} ${ASM_OPTIONS}" )
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set_property(SOURCE some_func.s APPEND PROPERTY COMPILE_OPTIONS "-x" "assembler-with-cpp")
 
-add_executable(main main.cpp some_func.asm)
+add_executable(
+    main 
+    main.cpp 
+    some_func.asm
+    #some_function.s
+)
