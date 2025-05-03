@@ -18,5 +18,5 @@ RegTest:
     mov $1, %eax
     ret
 
-; This fixes assembler warning.
+# This fixes assembler warning.
 .section .note.GNU-stack,"",@progbits
