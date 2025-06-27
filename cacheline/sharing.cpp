@@ -10,11 +10,11 @@
 
 struct X {
 #ifdef PADDED
-    alignas(64) std::atomic<int64_t> x = 0;
-    alignas(64) std::atomic<int64_t> y = 0;
+    alignas(64) volatile int64_t x = 0;
+    alignas(64) volatile int64_t y = 0;
 #else
-    std::atomic<int64_t> x = 0;
-    std::atomic<int64_t> y = 0;
+    volatile int64_t x = 0;
+    volatile int64_t y = 0;
 #endif
 };
 
@@ -23,7 +23,7 @@ X g;
 const auto& now = std::chrono::steady_clock::now;
 
 int main() {
-    auto l = [](std::atomic<int64_t>& a) {
+    auto l = [](volatile int64_t& a) {
         auto start = now();
         for (;;) {
             int64_t num = ++a;
