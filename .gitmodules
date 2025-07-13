@@ -1,0 +1,3 @@
+[submodule "arrow/perfcxx"]
+	path = arrow/perfcxx
+	url = git@github.com:awitten1/perfcxx.git
