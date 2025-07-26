@@ -123,9 +123,15 @@ int main() {
     SQLCHAR out_conn_str[1024];
     SQLSMALLINT out_conn_str_len;
 
-    ret = SQLDriverConnect(conn, NULL, conn_str, SQL_NTS,
-                          out_conn_str, sizeof(out_conn_str),
-                          &out_conn_str_len, SQL_DRIVER_COMPLETE);
+
+
+    ret = SQLConnect(conn, (SQLCHAR*)"Postgres", SQL_NTS,
+                     (SQLCHAR*)"postgres", SQL_NTS,
+                     (SQLCHAR*)"mysecretpassword", SQL_NTS);
+
+    // ret = SQLDriverConnect(conn, NULL, conn_str, SQL_NTS,
+    //                       out_conn_str, sizeof(out_conn_str),
+    //                       &out_conn_str_len, SQL_DRIVER_COMPLETE);
 
     if (ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO) {
         printf("Connected to PostgreSQL successfully!\n");
@@ -137,12 +143,6 @@ int main() {
         check_error(ret, SQL_HANDLE_DBC, conn, "connecting to database");
     }
 
-    // Alternative Method 2: Using DSN (if you have one configured)
-    /*
-    ret = SQLConnect(conn, (SQLCHAR*)"PostgreSQL-Test", SQL_NTS,
-                     (SQLCHAR*)"your_username", SQL_NTS,
-                     (SQLCHAR*)"your_password", SQL_NTS);
-    */
 
     // Cleanup
     SQLDisconnect(conn);
