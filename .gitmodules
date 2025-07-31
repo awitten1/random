@@ -1,3 +1,6 @@
 [submodule "arrow/perfcxx"]
 	path = arrow/perfcxx
 	url = git@github.com:awitten1/perfcxx.git
+[submodule "hugepages/perfcxx"]
+	path = hugepages/perfcxx
+	url = git@github.com:awitten1/perfcxx.git
