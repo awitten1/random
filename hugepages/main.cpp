@@ -11,7 +11,7 @@
 #include "perfcxx/perf-lib.hpp"
 
 #define SMALL_PAGE_SIZE (1 << 12)
-#define MAP_HUGE_2MB (21 << MAP_HUGE_SHIFT)
+#define MAP_HUGE_2MB (30 << MAP_HUGE_SHIFT)
 #define HUGE_PAGE_SIZE (1 << 21)
 
 void write_into_random_pages(int sz, char* buf, int iters) {
@@ -36,9 +36,9 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Usage: ./thp <t or f to indicate thp> <iters> <buf shift>\n");
     exit(EXIT_FAILURE);
   }
-  int num_pages = (1 << std::stoi(argv[3]));
+  int sz = (1 << std::stoi(argv[3]));
   int options = MAP_ANONYMOUS | MAP_PRIVATE;
-  int sz = num_pages * SMALL_PAGE_SIZE;
+  int num_pages = sz / SMALL_PAGE_SIZE;
   int page_size = SMALL_PAGE_SIZE;
 
   char* buf = (char*)mmap(NULL, sz, PROT_READ | PROT_WRITE, options, -1, 0);
