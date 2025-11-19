@@ -7,6 +7,7 @@ pub fn main() {
     // Behind the scenes, this compiles down to a system call which handles reading inputs
     // from the prover.
     let n = sp1_zkvm::io::read::<u32>();
+    println!("fib arg {n}");
 
     // Write n to public input
     sp1_zkvm::io::commit(&n);

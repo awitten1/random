@@ -5,3 +5,6 @@ edition = "2024"
 
 [build-dependencies]
 sp1-build = "5.2.2"
+
+[dependencies]
+sp1-sdk = "5.2.3"
