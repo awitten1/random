@@ -1,9 +1,12 @@
-// try with fno-if-conversion
+// try with fno-if-conversion and -fno-tree-vectorize
+#include <csignal>
 #include <iostream>
 #include <chrono>
 #include <algorithm>
 #include <vector>
+#include <cstdlib>
 #include <random>
+#include <unistd.h>
 
 using namespace std;
 
@@ -15,7 +18,7 @@ vector<unsigned char> gen_vec(bool sorted) {
         return uniform_dist(e1);
     };
     vector<unsigned char> ret;
-    for (int i = 0; i < 1e9; ++i) {
+    for (int i = 0; i < 1e8; ++i) {
         ret.push_back(r()%256);
     }
     if (sorted) {
@@ -42,10 +45,25 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
     auto vec = gen_vec(string(argv[1]) == "sorted");
+
+    int pid = getpid();
+    int cpid = fork();
+    if (cpid == 0) {
+        char buf[50];
+        sprintf(buf, "perf stat -p %d   > stat.log 2>&1",pid);
+        execl("/bin/sh", "sh", "-c", buf, NULL);
+        return 0;
+    }
+
+    setpgid(cpid, 0);
+
+
     auto t1 =  chrono::steady_clock::now();
     volatile auto ret = sums(vec);
     auto t2 = chrono::steady_clock::now();
     chrono::duration<double,milli> diff = t2 - t1;
     cout << diff.count() << endl;
+
+    ::kill(-cpid, SIGINT);
     return 0;
 }
