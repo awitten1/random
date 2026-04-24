@@ -4,45 +4,58 @@
 #include <iostream>
 #include <ratio>
 #include <sstream>
+#include <string>
 #include <thread>
 #include <atomic>
 #include <unistd.h>
 
+
 struct X {
-#ifdef PADDED
-    alignas(64) volatile int64_t x = 0;
-    alignas(64) volatile int64_t y = 0;
-#else
-    volatile int64_t x = 0;
-    volatile int64_t y = 0;
-#endif
+    alignas(64) int64_t x = 0;
+    alignas(64) int64_t y = 0;
 };
 
-X g;
+struct Y {
+    int64_t x = 0;
+    int64_t y = 0;
+};
+
+
+
+X g1{};
+Y g2{};
 
 const auto& now = std::chrono::steady_clock::now;
 
-int main() {
-    auto l = [](volatile int64_t& a) {
-        auto start = now();
-        for (;;) {
+int main(int argc, char** argv) {
+    long x = std::stol(argv[1]);
+    auto l = [x](volatile int64_t& a) {
+        for (int i = 0; i < x; ++i) {
             int64_t num = ++a;
-            if ((num & (num - 1)) == 0) {
-                std::ostringstream os;
-                os << "reached " << num << " in time " <<
-                    std::chrono::duration<float, std::milli>(now() - start).count() << " ms" << std::endl;
-                std::cout << os.str();
-            }
         }
     };
 
-    std::thread t([l]() { l(g.x); });
-    std::thread s([l]() { l(g.y); });
+    auto start = now();
 
-    t.detach();
-    s.detach();
+    std::thread t([l]() { l(g1.x); });
+    std::thread s([l]() { l(g1.y); });
 
-    pause();
+    t.join();
+    s.join();
+
+    auto end = now();
+    std::cout << std::chrono::duration<double>(end - start).count() << " seconds\n";
+
+    start = now();
+
+    std::thread t1([l]() { l(g2.x); });
+    std::thread s1([l]() { l(g2.y); });
+
+    t1.join();
+    s1.join();
+
+    end = now();
+    std::cout << std::chrono::duration<double>(end - start).count() << " seconds\n";
 
     return 0;
 }
