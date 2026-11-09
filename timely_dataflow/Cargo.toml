@@ -1,0 +1,7 @@
+[package]
+name = "timely_dataflow"
+version = "0.1.0"
+
+[dependencies]
+timely = "=0.32.0"
+differential-dataflow = "=0.26.0"
