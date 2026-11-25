@@ -34,4 +34,5 @@ setup_directories() {
 }
 
 setup_directories
+install_deps
 install_grpc
